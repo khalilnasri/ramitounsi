@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "Rami Tounsi",
+    "slug": "rami-tounsi",
+    "version": "1.0.0",
+    "platforms": ["ios", "android", "web"],
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash.png",
+      "backgroundColor": "#0d1f0f"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.ramitounsi.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0d1f0f"
+      },
+      "package": "com.ramitounsi.app"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
+  }
+}

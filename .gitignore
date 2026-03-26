@@ -1,0 +1,24 @@
+node_modules/
+.expo/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
+
+# Python (falls mal Scripte lokal laufen)
+__pycache__/
+*.pyc
+
+dist/
+web-build/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+web-build/
+.env
