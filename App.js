@@ -4,6 +4,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { ActivityIndicator, Text, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import SplashScreen from './src/screens/SplashScreen';
 import HomeScreen from './src/screens/HomeScreen';
@@ -11,9 +12,14 @@ import GameRoomScreen from './src/screens/GameRoomScreen';
 import GameScreen from './src/screens/GameScreen';
 import ResultScreen from './src/screens/ResultScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
+import HistoriqueScreen from './src/screens/HistoriqueScreen';
+import ClassementScreen from './src/screens/ClassementScreen';
+import ParametresScreen from './src/screens/ParametresScreen';
 import { COLORS } from './src/utils/constants';
 import { signInAnon, onAuthChange } from './firebase';
 import { AuthContext } from './src/context/AuthContext';
+import { LanguageContext } from './src/context/LanguageContext';
+import { t } from './src/utils/i18n';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -22,6 +28,8 @@ const fadeTransition = {
     cardStyle: { opacity: current.progress },
   }),
 };
+
+const LANGUAGE_KEY = 'language';
 
 const TabIcon = ({ name, focused }) => (
   <Text style={{ fontSize: 20, opacity: focused ? 1 : 0.5 }}>{name}</Text>
@@ -37,37 +45,7 @@ const HomeTab = () => (
   </HomeStack.Navigator>
 );
 
-// Placeholder screens for tabs
-const PartiesScreen = () => (
-  <View style={{ flex: 1, backgroundColor: COLORS.background, alignItems: 'center', justifyContent: 'center' }}>
-    <Text style={{ color: COLORS.textMuted, fontSize: 16 }}>Historique des parties</Text>
-    <Text style={{ color: COLORS.textMuted, fontSize: 13, marginTop: 8 }}>Bientôt disponible</Text>
-  </View>
-);
-
-const ClassementScreen = () => (
-  <View style={{ flex: 1, backgroundColor: COLORS.background, alignItems: 'center', justifyContent: 'center' }}>
-    <Text style={{ color: COLORS.gold, fontSize: 32, marginBottom: 16 }}>🏆</Text>
-    <Text style={{ color: COLORS.textLight, fontSize: 16, fontWeight: 'bold' }}>Classement</Text>
-    {[
-      { name: 'Ayoub S.', wins: 34 },
-      { name: 'Meryem L.', wins: 29 },
-      { name: 'Khalil N.', wins: 22 },
-    ].map((p, i) => (
-      <View key={p.name} style={{
-        flexDirection: 'row', width: '80%', justifyContent: 'space-between',
-        backgroundColor: COLORS.cardBackground, borderRadius: 10, padding: 12,
-        marginTop: 10, borderWidth: 1, borderColor: '#1e3d20',
-      }}>
-        <Text style={{ color: COLORS.gold }}>#{i + 1}</Text>
-        <Text style={{ color: COLORS.textLight }}>{p.name}</Text>
-        <Text style={{ color: COLORS.greenAccent }}>{p.wins} victoires</Text>
-      </View>
-    ))}
-  </View>
-);
-
-const MainTabs = () => (
+const MainTabs = ({ language }) => (
   <Tab.Navigator
     screenOptions={{
       headerShown: false,
@@ -84,22 +62,22 @@ const MainTabs = () => (
     }}
   >
     <Tab.Screen
-      name="Accueil"
+      name={t(language, 'home')}
       component={HomeTab}
       options={{ tabBarIcon: ({ focused }) => <TabIcon name="🏠" focused={focused} /> }}
     />
     <Tab.Screen
-      name="Parties"
-      component={PartiesScreen}
-      options={{ tabBarIcon: ({ focused }) => <TabIcon name="🃏" focused={focused} /> }}
+      name={t(language, 'games')}
+      component={HistoriqueScreen}
+      options={{ tabBarIcon: ({ focused }) => <TabIcon name="🎮" focused={focused} /> }}
     />
     <Tab.Screen
-      name="Classement"
+      name={t(language, 'classement')}
       component={ClassementScreen}
       options={{ tabBarIcon: ({ focused }) => <TabIcon name="🏆" focused={focused} /> }}
     />
     <Tab.Screen
-      name="Profil"
+      name={t(language, 'profile')}
       component={ProfileScreen}
       options={{ tabBarIcon: ({ focused }) => <TabIcon name="👤" focused={focused} /> }}
     />
@@ -109,6 +87,21 @@ const MainTabs = () => (
 export default function App() {
   const [userId, setUserId] = useState(null);
   const [authReady, setAuthReady] = useState(false);
+  const [language, setLanguage] = useState('fr');
+
+  useEffect(() => {
+    const loadLanguage = async () => {
+      try {
+        const saved = await AsyncStorage.getItem(LANGUAGE_KEY);
+        if (saved === 'fr' || saved === 'ar') setLanguage(saved);
+        if (saved === 'FR') setLanguage('fr');
+        if (saved === 'AR') setLanguage('ar');
+      } catch (error) {
+        // Keep default language.
+      }
+    };
+    loadLanguage();
+  }, []);
 
   useEffect(() => {
     let unsubAuth = () => {};
@@ -136,6 +129,7 @@ export default function App() {
   }, []);
 
   const authValue = useMemo(() => ({ userId, authReady }), [userId, authReady]);
+  const languageValue = useMemo(() => ({ language, setLanguage }), [language]);
 
   if (!authReady) {
     return (
@@ -153,13 +147,20 @@ export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <AuthContext.Provider value={authValue}>
-        <NavigationContainer>
-          <Stack.Navigator screenOptions={{ headerShown: false, ...fadeTransition }}>
-            <Stack.Screen name="Splash" component={SplashScreen} />
-            <Stack.Screen name="Main" component={MainTabs} />
-            {/* Direct game routes (from splash → home) */}
-          </Stack.Navigator>
-        </NavigationContainer>
+        <LanguageContext.Provider value={languageValue}>
+          <NavigationContainer>
+            <Stack.Navigator screenOptions={{ headerShown: false, ...fadeTransition }}>
+              <Stack.Screen name="Splash" component={SplashScreen} />
+              <Stack.Screen name="Main">
+                {(props) => <MainTabs {...props} language={language} />}
+              </Stack.Screen>
+              <Stack.Screen name="Historique" component={HistoriqueScreen} />
+              <Stack.Screen name="ClassementGlobal" component={ClassementScreen} />
+              <Stack.Screen name="Parametres" component={ParametresScreen} />
+              {/* Direct game routes (from splash → home) */}
+            </Stack.Navigator>
+          </NavigationContainer>
+        </LanguageContext.Provider>
       </AuthContext.Provider>
     </GestureHandlerRootView>
   );
