@@ -1,215 +1,283 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
+import {
+  View, Text, StyleSheet, TouchableOpacity,
+  Animated, ImageBackground,
+} from 'react-native';
 import { COLORS } from '../utils/constants';
 import { formatDinar } from '../utils/helpers';
 import { triggerTapHaptic } from '../utils/haptics';
 import { EASE, T } from '../utils/animation';
 
-const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
+const AnimatedView = Animated.View;
 
-const PlayerDots = ({ occupied, total }) => {
-  const pulseAnim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1, duration: 1200, easing: EASE, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 0, duration: 1200, easing: EASE, useNativeDriver: true }),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [pulseAnim]);
-
-  return (
-    <View style={styles.dotsRow}>
-      {Array.from({ length: total }).map((_, i) => (
-        <Animated.View
-          key={i}
-          style={[
-            styles.dot,
-            i < occupied ? styles.dotOccupied : styles.dotFree,
-            i < occupied && {
-              opacity: pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1] }),
-              transform: [{ scale: pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.12] }) }],
-            },
-          ]}
-        />
-      ))}
-    </View>
-  );
-};
-
-const RoomCard = ({ room, occupiedCount = 0, onJoin, gameStarted = false }) => {
+const RoomCard = ({ room, occupiedCount = 0, onJoin, gameStarted = false, image }) => {
   const isFull = occupiedCount >= room.maxPlayers;
   const isRunning = Boolean(gameStarted);
   const isDisabled = isFull || isRunning;
-  const buttonLabel = isRunning ? 'Läuft...' : (isFull ? 'Voll' : 'Jouer!');
   const pressScale = useRef(new Animated.Value(1)).current;
   const tapAnimRef = useRef(null);
 
-  const animatePress = () => {
-    tapAnimRef.current = Animated.sequence([
-      Animated.timing(pressScale, { toValue: 0.97, duration: T.tap, easing: EASE, useNativeDriver: true }),
-      Animated.timing(pressScale, { toValue: 1, duration: T.tap, easing: EASE, useNativeDriver: true }),
-    ]);
-    tapAnimRef.current.start();
-  };
+  const gainPercent = Math.round((room.topf / room.einsatz - 1) * 100);
+  const accentColor = room.accentColor || COLORS.greenAccent;
+
+  const buttonLabel = isRunning ? 'En cours' : isFull ? 'Complet' : 'Jouer!';
 
   useEffect(() => () => tapAnimRef.current?.stop(), []);
 
   const onJoinPress = async () => {
     if (isDisabled || !onJoin) return;
     await triggerTapHaptic();
-    animatePress();
+    tapAnimRef.current = Animated.sequence([
+      Animated.timing(pressScale, { toValue: 0.97, duration: T.tap, easing: EASE, useNativeDriver: true }),
+      Animated.timing(pressScale, { toValue: 1, duration: T.tap, easing: EASE, useNativeDriver: true }),
+    ]);
+    tapAnimRef.current.start();
     setTimeout(() => onJoin(room), T.tap);
   };
 
-  return (
-    <AnimatedTouchableOpacity
-      style={[styles.card, { transform: [{ scale: pressScale }] }]}
-      activeOpacity={0.85}
-      onPress={onJoinPress}
-      disabled={isDisabled}
-    >
-      <View style={styles.symbolContainer}>
-        <Text style={styles.symbol}>{room.symbol}</Text>
-      </View>
+  const cardInner = (
+    <>
+      {/* Very subtle overlay — just enough for edge contrast, image stays vivid */}
+      <View style={styles.overlay} />
 
-      <View style={styles.info}>
-        <Text style={styles.nameAr}>{room.nameAr}</Text>
-        <Text style={styles.nameFr}>{room.nameFr}</Text>
-        <View style={styles.statsRow}>
-          <View style={styles.stat}>
-            <Text style={styles.statLabel}>Pot</Text>
-            <Text style={styles.statValue}>{formatDinar(room.topf)}</Text>
+      {/* Main row: [POT badge] [spacer] [Right panel] */}
+      <View style={styles.mainRow}>
+
+        {/* Left: circular POT badge */}
+        <View style={[styles.potBadge, { borderColor: accentColor }]}>
+          <Text style={styles.potLabel}>POT</Text>
+          <Text style={styles.potAmount}>{formatDinar(room.topf)}</Text>
+          <View style={styles.playersRow}>
+            <Text style={styles.playerIcon}>👥</Text>
+            <Text style={styles.playerCount}>{occupiedCount}/{room.maxPlayers}</Text>
           </View>
-          <View style={styles.divider} />
-          <View style={styles.stat}>
-            <Text style={styles.statLabel}>Mise</Text>
-            <Text style={styles.statValue}>{formatDinar(room.einsatz)}</Text>
-          </View>
-          <View style={styles.divider} />
-          <View style={styles.stat}>
-            <Text style={styles.statLabel}>Joueurs</Text>
-            <PlayerDots occupied={occupiedCount} total={room.maxPlayers} />
-          </View>
+        </View>
+
+        {/* Center: room name floats over image */}
+        <View style={styles.center}>
+          <Text style={styles.nameAr}>{room.nameAr}</Text>
+          <Text style={styles.nameFr}>{room.nameFr}</Text>
+        </View>
+
+        {/* Right: dark panel with stake + button */}
+        <View style={styles.rightPanel}>
+          <Text style={styles.stakeLabel}>Mise</Text>
+          <Text style={styles.stakeAmount}>{formatDinar(room.einsatz)}</Text>
+          <TouchableOpacity
+            style={[styles.joinButton, isDisabled && styles.joinButtonDisabled]}
+            onPress={onJoinPress}
+            disabled={isDisabled}
+            activeOpacity={0.85}
+          >
+            <Text style={[styles.joinText, isDisabled && styles.joinTextDisabled]}>
+              {buttonLabel}
+            </Text>
+          </TouchableOpacity>
         </View>
       </View>
 
-      <TouchableOpacity
-        style={[styles.joinButton, isDisabled && styles.joinButtonFull]}
-        onPress={onJoinPress}
-        activeOpacity={0.85}
-        disabled={isDisabled}
-      >
-        <Text style={[styles.joinText, isDisabled && styles.joinTextFull]}>
-          {buttonLabel}
-        </Text>
-      </TouchableOpacity>
-    </AnimatedTouchableOpacity>
+      {/* Bottom colored bar: gain percentage */}
+      <View style={[styles.bottomBar, { backgroundColor: accentColor }]}>
+        <Text style={styles.gainText}>🏆  {gainPercent}% de gain</Text>
+      </View>
+    </>
+  );
+
+  if (image) {
+    return (
+      <AnimatedView style={[styles.cardWrapper, { transform: [{ scale: pressScale }] }]}>
+        <ImageBackground
+          source={image}
+          style={styles.card}
+          imageStyle={styles.cardImage}
+          resizeMode="cover"
+        >
+          {cardInner}
+        </ImageBackground>
+      </AnimatedView>
+    );
+  }
+
+  /* Hobby room: no image → gradient-like dark background */
+  return (
+    <AnimatedView style={[styles.cardWrapper, { transform: [{ scale: pressScale }] }]}>
+      <View style={[styles.card, styles.cardNoImage]}>
+        {cardInner}
+      </View>
+    </AnimatedView>
   );
 };
 
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: COLORS.cardBackground,
-    borderRadius: 14,
-    padding: 16,
-    marginHorizontal: 16,
+  cardWrapper: {
+    marginHorizontal: 14,
     marginVertical: 7,
+    borderRadius: 18,
+    overflow: 'hidden',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.45,
+    shadowRadius: 10,
+  },
+  card: {
+    height: 155,
+    justifyContent: 'space-between',
+  },
+  cardImage: {
+    borderRadius: 18,
+    top: 0,
+  },
+  cardNoImage: {
+    backgroundColor: '#0f2710',
+  },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.12)',
+    borderRadius: 18,
+  },
+  mainRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#1e3d20',
-    elevation: 4,
-    shadowColor: '#c9a02a',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
+    flex: 1,
+    paddingHorizontal: 12,
+    paddingTop: 12,
+    paddingBottom: 6,
   },
-  symbolContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: COLORS.greenAccent,
+
+  /* POT badge — left circular element */
+  potBadge: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    borderWidth: 2.5,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
+    marginRight: 8,
   },
-  symbol: {
-    fontSize: 24,
-    color: COLORS.gold,
-  },
-  info: {
-    flex: 1,
-  },
-  nameAr: {
-    color: COLORS.gold,
-    fontSize: 15,
+  potLabel: {
+    color: '#fff',
+    fontSize: 9,
     fontWeight: 'bold',
-    textAlign: 'right',
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    textShadowColor: 'rgba(0,0,0,0.9)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
-  nameFr: {
-    color: COLORS.textLight,
-    fontSize: 13,
-    marginBottom: 6,
+  potAmount: {
+    color: '#ffffff',
+    fontSize: 19,
+    fontWeight: 'bold',
+    lineHeight: 22,
+    textShadowColor: 'rgba(0,0,0,0.9)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
-  statsRow: {
+  playersRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginTop: 2,
+    gap: 3,
   },
-  stat: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  statLabel: {
-    color: COLORS.textMuted,
+  playerIcon: {
     fontSize: 10,
   },
-  statValue: {
-    color: COLORS.gold,
-    fontSize: 12,
+  playerCount: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '600',
+    textShadowColor: 'rgba(0,0,0,0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+
+  /* Center spacer — image shows through */
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingBottom: 6,
+    paddingHorizontal: 4,
+  },
+  nameAr: {
+    color: '#ffffff',
+    fontSize: 16,
     fontWeight: 'bold',
+    textShadowColor: 'rgba(0,0,0,1)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 8,
   },
-  divider: {
-    width: 1,
-    height: 28,
-    backgroundColor: '#2a4a2a',
+  nameFr: {
+    color: '#ffffff',
+    fontSize: 11,
+    textShadowColor: 'rgba(0,0,0,1)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 6,
   },
-  dotsRow: {
-    flexDirection: 'row',
-    marginTop: 2,
-    gap: 4,
+
+  /* Right dark panel */
+  rightPanel: {
+    backgroundColor: 'rgba(0, 0, 0, 0.60)',
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    minWidth: 82,
+    gap: 3,
   },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+  stakeLabel: {
+    color: '#ddd',
+    fontSize: 10,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    textShadowColor: 'rgba(0,0,0,0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
-  dotOccupied: {
-    backgroundColor: COLORS.slotOccupied,
-  },
-  dotFree: {
-    backgroundColor: COLORS.slotFree,
+  stakeAmount: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: 'bold',
+    lineHeight: 21,
+    textShadowColor: 'rgba(0,0,0,0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   joinButton: {
-    backgroundColor: COLORS.gold,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 10,
-    marginLeft: 10,
+    backgroundColor: '#43a047',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 9,
+    marginTop: 4,
+    minWidth: 68,
+    alignItems: 'center',
+    elevation: 2,
   },
-  joinButtonFull: {
+  joinButtonDisabled: {
     backgroundColor: '#333',
   },
   joinText: {
-    color: COLORS.black,
+    color: '#ffffff',
     fontWeight: 'bold',
-    fontSize: 14,
+    fontSize: 13,
   },
-  joinTextFull: {
+  joinTextDisabled: {
     color: '#666',
+  },
+
+  /* Bottom colored gain bar */
+  bottomBar: {
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gainText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: 'bold',
+    letterSpacing: 0.3,
   },
 });
 

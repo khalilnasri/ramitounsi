@@ -18,11 +18,12 @@ export const ROOMS = [
   {
     id: 'hobby',
     nameAr: 'قاعة الهواية',
-    nameFr: 'Salle Hobby (vs App)',
+    nameFr: 'Salle Hobby (vs Bot)',
     symbol: '🤖',
     einsatz: 0.5,
     topf: 1,
     maxPlayers: 4,
+    accentColor: '#2e7d32',
   },
   {
     id: 'vip',
@@ -32,6 +33,7 @@ export const ROOMS = [
     einsatz: 4,
     topf: 16,
     maxPlayers: 4,
+    accentColor: '#6a1b9a',
   },
   {
     id: 'salle3',
@@ -41,6 +43,7 @@ export const ROOMS = [
     einsatz: 3,
     topf: 12,
     maxPlayers: 4,
+    accentColor: '#4a148c',
   },
   {
     id: 'salle2',
@@ -50,6 +53,7 @@ export const ROOMS = [
     einsatz: 2,
     topf: 8,
     maxPlayers: 4,
+    accentColor: '#1565c0',
   },
   {
     id: 'salle1',
@@ -59,6 +63,7 @@ export const ROOMS = [
     einsatz: 1,
     topf: 4,
     maxPlayers: 4,
+    accentColor: '#bf360c',
   },
 ];
 

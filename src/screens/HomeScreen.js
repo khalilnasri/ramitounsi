@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  StatusBar, SafeAreaView, Animated,
+  StatusBar, SafeAreaView, Animated, Image,
 } from 'react-native';
 import { COLORS, ROOMS } from '../utils/constants';
 import { formatDinar } from '../utils/helpers';
@@ -11,95 +11,104 @@ import { db } from '../../firebase';
 import { triggerTapHaptic } from '../utils/haptics';
 import { EASE, T } from '../utils/animation';
 
+/* ── Static image mapping (require must be static strings) ── */
+const ROOM_IMAGES = {
+  vip:    require('../../assets/vip.png'),
+  salle3: require('../../assets/salle3.webp'),
+  salle2: require('../../assets/salle2.webp'),
+  salle1: require('../../assets/salle1.webp'),
+};
+
 const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
 
 const HomeScreen = ({ navigation, route }) => {
-  const [balance, setBalance] = useState(50.0);
-  const [bonusClaimed, setBonusClaimed] = useState(false);
-  const [occupancy, setOccupancy] = useState({});
-  const [roomState, setRoomState] = useState({});
-  const [notice, setNotice] = useState('');
+  const [balance, setBalance]               = useState(50.0);
+  const [bonusClaimed, setBonusClaimed]     = useState(false);
+  const [occupancy, setOccupancy]           = useState({});
+  const [roomState, setRoomState]           = useState({});
+  const [notice, setNotice]                 = useState('');
   const [displayBalance, setDisplayBalance] = useState(0);
 
   const promoShimmer = useRef(new Animated.Value(-1)).current;
-  const roomAnims = useRef(ROOMS.map(() => new Animated.Value(0))).current;
+  const roomAnims    = useRef(ROOMS.map(() => new Animated.Value(0))).current;
+  const headerScale  = useRef(new Animated.Value(0.96)).current;
 
+  /* Notice banner */
   useEffect(() => {
     if (!route?.params?.notice) return undefined;
     setNotice(route.params.notice);
-    const timeout = setTimeout(() => setNotice(''), 3000);
-    return () => clearTimeout(timeout);
+    const t = setTimeout(() => setNotice(''), 3000);
+    return () => clearTimeout(t);
   }, [route?.params?.notice]);
 
+  /* Animated balance counter */
   useEffect(() => {
     let frameId;
-    const startValue = displayBalance;
-    const endValue = balance;
-    const startTime = Date.now();
-    const duration = T.verySlow;
-
-    const updateValue = () => {
-      const progress = Math.min((Date.now() - startTime) / duration, 1);
-      const next = startValue + ((endValue - startValue) * progress);
+    const from = displayBalance;
+    const to   = balance;
+    const t0   = Date.now();
+    const run  = () => {
+      const p    = Math.min((Date.now() - t0) / T.verySlow, 1);
+      const next = from + (to - from) * p;
       setDisplayBalance(parseFloat(next.toFixed(2)));
-      if (progress < 1) frameId = requestAnimationFrame(updateValue);
+      if (p < 1) frameId = requestAnimationFrame(run);
     };
-
-    frameId = requestAnimationFrame(updateValue);
+    frameId = requestAnimationFrame(run);
     return () => cancelAnimationFrame(frameId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [balance]);
 
+  /* Shimmer on bonus banner */
   useEffect(() => {
-    const shimmerLoop = Animated.loop(
+    const loop = Animated.loop(
       Animated.timing(promoShimmer, {
-        toValue: 1,
-        duration: T.verySlow,
-        easing: EASE,
-        useNativeDriver: true,
+        toValue: 1, duration: T.verySlow, easing: EASE, useNativeDriver: true,
       })
     );
-    shimmerLoop.start();
-    return () => shimmerLoop.stop();
+    loop.start();
+    return () => loop.stop();
   }, [promoShimmer]);
 
+  /* Staggered room cards entrance */
   useEffect(() => {
-    roomAnims.forEach((anim) => anim.setValue(0));
-    const fadeIn = roomAnims.map((anim, i) => (
-      Animated.timing(anim, {
-        toValue: 1,
-        duration: T.slow,
-        delay: i * T.stagger,
-        useNativeDriver: true,
-      })
-    ));
-    const roomIntro = Animated.stagger(T.stagger, fadeIn);
-    roomIntro.start();
-    return () => roomIntro.stop();
+    roomAnims.forEach((a) => a.setValue(0));
+    const seq = Animated.stagger(
+      T.stagger,
+      roomAnims.map((a) =>
+        Animated.timing(a, { toValue: 1, duration: T.slow, easing: EASE, useNativeDriver: true })
+      )
+    );
+    seq.start();
+    return () => seq.stop();
   }, [roomAnims]);
 
+  /* Header entrance */
   useEffect(() => {
-    const unsubscribers = [];
+    Animated.timing(headerScale, {
+      toValue: 1, duration: T.normal, easing: EASE, useNativeDriver: true,
+    }).start();
+  }, [headerScale]);
+
+  /* Firebase: room occupancy & game state */
+  useEffect(() => {
+    const unsubs = [];
     ROOMS.forEach((room) => {
-      const playersRef = collection(db, 'rooms', room.id, 'spieler');
-      const roomDocRef = doc(db, 'rooms', room.id);
-
-      unsubscribers.push(onSnapshot(playersRef, (snap) => {
-        setOccupancy((prev) => ({ ...prev, [room.id]: snap.size }));
-      }));
-
-      unsubscribers.push(onSnapshot(roomDocRef, (snap) => {
-        const data = snap.exists() ? snap.data() : {};
-        setRoomState((prev) => ({
-          ...prev,
-          [room.id]: { gameStarted: Boolean(data.gameStarted) },
-        }));
-      }));
+      unsubs.push(
+        onSnapshot(collection(db, 'rooms', room.id, 'spieler'), (snap) =>
+          setOccupancy((prev) => ({ ...prev, [room.id]: snap.size }))
+        )
+      );
+      unsubs.push(
+        onSnapshot(doc(db, 'rooms', room.id), (snap) => {
+          const data = snap.exists() ? snap.data() : {};
+          setRoomState((prev) => ({
+            ...prev,
+            [room.id]: { gameStarted: Boolean(data.gameStarted) },
+          }));
+        })
+      );
     });
-
-    return () => {
-      unsubscribers.forEach((unsub) => unsub());
-    };
+    return () => unsubs.forEach((u) => u());
   }, []);
 
   const claimBonus = async () => {
@@ -123,33 +132,46 @@ const HomeScreen = ({ navigation, route }) => {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
+      <StatusBar barStyle="light-content" backgroundColor="#1a0a2e" />
 
-      {/* Header */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>رامي تونسي</Text>
-          <Text style={styles.headerSubtitle}>Rami Tounsi Café</Text>
+      {/* ── Header ── */}
+      <Animated.View style={[styles.header, { transform: [{ scale: headerScale }] }]}>
+        {/* Left: avatar + title */}
+        <View style={styles.headerLeft}>
+          <View style={styles.avatarRing}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>ر</Text>
+            </View>
+          </View>
+          <View style={styles.headerTitles}>
+            <Text style={styles.headerTitleAr}>رامي تونسي</Text>
+            <Text style={styles.headerSubtitle}>Rami Tounsi Café</Text>
+          </View>
         </View>
+
+        {/* Right: balance chip */}
         <TouchableOpacity style={styles.balanceChip} activeOpacity={0.85}>
-          <Text style={styles.coinIcon}>🪙</Text>
+          <Text style={styles.coinEmoji}>🪙</Text>
           <Text style={styles.balanceText}>{formatDinar(displayBalance)}</Text>
         </TouchableOpacity>
-      </View>
+      </Animated.View>
 
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+
+        {/* Notice banner */}
         {notice ? (
           <View style={styles.noticeBanner}>
             <Text style={styles.noticeText}>{notice}</Text>
           </View>
         ) : null}
 
-        {/* Promo Banner */}
+        {/* ── Daily Bonus Banner ── */}
         <AnimatedTouchableOpacity
-          style={[styles.promoBanner, bonusClaimed && styles.promoBannerClaimed]}
+          style={[styles.bonusBanner, bonusClaimed && styles.bonusBannerClaimed]}
           onPress={claimBonus}
           activeOpacity={0.85}
         >
+          {/* Shimmer sweep */}
           <Animated.View
             pointerEvents="none"
             style={[
@@ -157,43 +179,53 @@ const HomeScreen = ({ navigation, route }) => {
               {
                 transform: [{
                   translateX: promoShimmer.interpolate({
-                    inputRange: [-1, 1],
-                    outputRange: [-260, 260],
+                    inputRange: [-1, 1], outputRange: [-260, 260],
                   }),
                 }],
               },
             ]}
           />
-          <Text style={styles.promoIcon}>{bonusClaimed ? '✓' : '🎁'}</Text>
-          <View style={styles.promoTextContainer}>
-            <Text style={styles.promoTitle}>
-              {bonusClaimed ? 'Bonus réclamé!' : 'Bonus du jour'}
+          <Text style={styles.bonusIcon}>{bonusClaimed ? '✓' : '🎁'}</Text>
+          <View style={styles.bonusTexts}>
+            <Text style={styles.bonusTitle}>
+              {bonusClaimed ? 'Bonus réclamé !' : 'Bonus du jour'}
             </Text>
-            <Text style={styles.promoAmount}>
+            <Text style={styles.bonusAmount}>
               {bonusClaimed ? 'Revenez demain' : '+ 5.00 D'}
             </Text>
           </View>
+          {!bonusClaimed && (
+            <View style={styles.bonusBadge}>
+              <Text style={styles.bonusBadgeText}>GRATUIT</Text>
+            </View>
+          )}
         </AnimatedTouchableOpacity>
 
-        {/* Section Title */}
+        {/* ── Section title ── */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Salles de jeu</Text>
-          <Text style={styles.sectionSubtitle}>Choisissez votre table</Text>
+          <View style={styles.sectionTitleRow}>
+            <View style={styles.sectionAccentBar} />
+            <Text style={styles.sectionTitle}>Salles de jeu</Text>
+          </View>
+          <Text style={styles.sectionSub}>Choisissez votre table</Text>
         </View>
 
-        {/* Room Cards */}
+        {/* ── Room Cards ── */}
         {ROOMS.map((room, index) => (
           <Animated.View
             key={room.id}
             style={{
               opacity: roomAnims[index],
               transform: [{
-                translateY: roomAnims[index].interpolate({ inputRange: [0, 1], outputRange: [16, 0] }),
+                translateY: roomAnims[index].interpolate({
+                  inputRange: [0, 1], outputRange: [20, 0],
+                }),
               }],
             }}
           >
             <RoomCard
               room={room}
+              image={ROOM_IMAGES[room.id]}
               occupiedCount={room.id === 'hobby' ? 1 : (occupancy[room.id] || 0)}
               gameStarted={roomState[room.id]?.gameStarted}
               onJoin={handleJoinRoom}
@@ -201,23 +233,23 @@ const HomeScreen = ({ navigation, route }) => {
           </Animated.View>
         ))}
 
-        {/* Win Distribution */}
-        <View style={styles.distributionCard}>
+        {/* ── Win distribution ── */}
+        <View style={styles.distCard}>
           <Text style={styles.distTitle}>Répartition des gains</Text>
           <View style={styles.distBar}>
-            <View style={[styles.distSegment, styles.distFirst, { flex: 5 }]}>
+            <View style={[styles.distSeg, styles.distFirst, { flex: 5 }]}>
               <Text style={styles.distLabel}>🥇 50%</Text>
             </View>
-            <View style={[styles.distSegment, styles.distSecond, { flex: 3 }]}>
+            <View style={[styles.distSeg, styles.distSecond, { flex: 3 }]}>
               <Text style={styles.distLabel}>🥈 30%</Text>
             </View>
-            <View style={[styles.distSegment, styles.distApp, { flex: 2 }]}>
+            <View style={[styles.distSeg, styles.distApp, { flex: 2 }]}>
               <Text style={styles.distLabel}>20%</Text>
             </View>
           </View>
         </View>
 
-        <View style={{ height: 80 }} />
+        <View style={{ height: 90 }} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -226,132 +258,203 @@ const HomeScreen = ({ navigation, route }) => {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: '#0d0820',
   },
+  scroll: {
+    paddingTop: 4,
+  },
+
+  /* ── Header ── */
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 12,
+    backgroundColor: '#1a0a2e',
     borderBottomWidth: 1,
-    borderBottomColor: '#1e3d20',
+    borderBottomColor: '#3d1a6e',
   },
-  headerTitle: {
-    fontSize: 22,
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  avatarRing: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    borderWidth: 2,
+    borderColor: COLORS.gold,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#6a1b9a',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  headerTitles: {
+    gap: 1,
+  },
+  headerTitleAr: {
+    fontSize: 19,
     fontWeight: 'bold',
     color: COLORS.gold,
   },
   headerSubtitle: {
     fontSize: 11,
-    color: COLORS.textMuted,
-    letterSpacing: 1,
+    color: '#9e9e9e',
+    letterSpacing: 0.8,
   },
   balanceChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.cardBackground,
+    backgroundColor: '#0f2710',
     paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
+    paddingVertical: 9,
+    borderRadius: 22,
+    borderWidth: 1.5,
     borderColor: COLORS.gold,
     gap: 6,
+    elevation: 4,
+    shadowColor: COLORS.gold,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
   },
-  coinIcon: {
-    fontSize: 16,
+  coinEmoji: {
+    fontSize: 17,
   },
   balanceText: {
     color: COLORS.gold,
     fontWeight: 'bold',
-    fontSize: 15,
+    fontSize: 16,
   },
-  promoBanner: {
+
+  /* ── Notice ── */
+  noticeBanner: {
+    backgroundColor: '#7f1d1d',
+    borderColor: '#ef4444',
+    borderWidth: 1,
+    borderRadius: 10,
+    marginHorizontal: 14,
+    marginTop: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  noticeText: {
+    color: '#fee2e2',
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+
+  /* ── Bonus Banner ── */
+  bonusBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1a4a1a',
-    borderWidth: 1,
+    backgroundColor: '#1a0e2e',
+    borderWidth: 1.5,
     borderColor: COLORS.gold,
-    borderRadius: 14,
-    margin: 16,
-    padding: 16,
+    borderRadius: 16,
+    margin: 14,
+    padding: 14,
     gap: 12,
     overflow: 'hidden',
-    position: 'relative',
-    shadowColor: '#c9a02a',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
+    elevation: 5,
+    shadowColor: COLORS.gold,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.35,
     shadowRadius: 8,
-    elevation: 4,
+  },
+  bonusBannerClaimed: {
+    opacity: 0.55,
+    borderColor: COLORS.greenAccent,
   },
   shimmer: {
     position: 'absolute',
     top: 0,
     left: 0,
-    width: 120,
+    width: 110,
     height: '100%',
-    backgroundColor: 'rgba(201,160,42,0.22)',
+    backgroundColor: 'rgba(201,160,42,0.18)',
   },
-  noticeBanner: {
-    backgroundColor: '#8b1f1f',
-    borderColor: '#b14b4b',
-    borderWidth: 1,
-    borderRadius: 10,
-    marginHorizontal: 16,
-    marginTop: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
+  bonusIcon: {
+    fontSize: 34,
   },
-  noticeText: {
-    color: '#ffe5e5',
-    textAlign: 'center',
-    fontWeight: '600',
-  },
-  promoBannerClaimed: {
-    opacity: 0.6,
-    borderColor: COLORS.greenAccent,
-  },
-  promoIcon: {
-    fontSize: 32,
-  },
-  promoTextContainer: {
+  bonusTexts: {
     flex: 1,
   },
-  promoTitle: {
+  bonusTitle: {
     color: COLORS.textLight,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: 'bold',
   },
-  promoAmount: {
+  bonusAmount: {
     color: COLORS.gold,
     fontSize: 22,
     fontWeight: 'bold',
   },
+  bonusBadge: {
+    backgroundColor: COLORS.gold,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  bonusBadgeText: {
+    color: '#000',
+    fontSize: 10,
+    fontWeight: 'bold',
+    letterSpacing: 0.5,
+  },
+
+  /* ── Section header ── */
   sectionHeader: {
     paddingHorizontal: 16,
-    marginBottom: 8,
+    marginBottom: 6,
+    marginTop: 2,
+  },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 2,
+  },
+  sectionAccentBar: {
+    width: 4,
+    height: 20,
+    borderRadius: 2,
+    backgroundColor: COLORS.gold,
   },
   sectionTitle: {
     color: COLORS.textLight,
     fontSize: 18,
     fontWeight: 'bold',
   },
-  sectionSubtitle: {
+  sectionSub: {
     color: COLORS.textMuted,
     fontSize: 12,
+    paddingLeft: 12,
   },
-  distributionCard: {
-    backgroundColor: COLORS.cardBackground,
+
+  /* ── Win distribution ── */
+  distCard: {
+    backgroundColor: '#0f0a1e',
     borderRadius: 14,
-    margin: 16,
+    marginHorizontal: 14,
+    marginTop: 14,
     padding: 14,
     borderWidth: 1,
-    borderColor: '#1e3d20',
-    shadowColor: '#c9a02a',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
+    borderColor: '#2a1a4a',
+    elevation: 3,
   },
   distTitle: {
     color: COLORS.textMuted,
@@ -366,7 +469,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     gap: 2,
   },
-  distSegment: {
+  distSeg: {
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -376,15 +479,15 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 8,
   },
   distSecond: {
-    backgroundColor: '#888',
+    backgroundColor: '#78909c',
   },
   distApp: {
-    backgroundColor: '#555',
+    backgroundColor: '#455a64',
     borderTopRightRadius: 8,
     borderBottomRightRadius: 8,
   },
   distLabel: {
-    color: COLORS.white,
+    color: '#fff',
     fontWeight: 'bold',
     fontSize: 12,
   },
